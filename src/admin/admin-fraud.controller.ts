@@ -28,17 +28,19 @@ export class AdminFraudController {
   ) {}
 
   @Get('flags')
+  @StaffRoles('compliance', 'admin')
   list(@Query() q: AdminFlagsQueryDto) {
     return this.admin.list(q.status, q.accountId, q.page ?? 1, q.limit ?? 25);
   }
 
   @Get('flags/:id')
+  @StaffRoles('compliance', 'admin')
   detail(@Param('id') id: string) {
     return this.admin.detail(id);
   }
 
   @Patch('flags/:id')
-  @StaffRoles('admin')
+  @StaffRoles('compliance', 'admin')
   resolve(@Param('id') id: string, @Body() dto: ResolveFlagDto, @Req() req: any) {
     return this.admin.resolve(id, dto.status, dto.note, req.staff);
   }
