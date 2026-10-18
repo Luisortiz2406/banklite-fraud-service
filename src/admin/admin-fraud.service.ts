@@ -32,7 +32,9 @@ export class AdminFraudService {
 
   async detail(id: string) {
     const flag = await this.find(id);
-    const score = await this.scores.findOne({ where: { transactionId: flag.transactionId, accountId: flag.accountId } });
+    const score = await this.scores.findOne({
+      where: { transactionId: flag.transactionId, accountId: flag.accountId },
+    });
     return { ...flag, rulesTriggered: score?.rulesTriggered ?? [] };
   }
 
@@ -49,7 +51,13 @@ export class AdminFraudService {
       await manager.save(flag);
       await this.audit.record(
         actor,
-        { action: `fraud.${status}`, targetType: 'flagged_transaction', targetId: id, reason: note, details: { transactionId: flag.transactionId, accountId: flag.accountId, score: flag.score } },
+        {
+          action: `fraud.${status}`,
+          targetType: 'flagged_transaction',
+          targetId: id,
+          reason: note,
+          details: { transactionId: flag.transactionId, accountId: flag.accountId, score: flag.score },
+        },
         manager,
       );
     });

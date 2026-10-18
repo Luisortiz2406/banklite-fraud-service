@@ -60,7 +60,9 @@ export function evaluateRules(
 
   // 2. Velocidad: varias salidas en poco tiempo (posible toma de control de la cuenta).
   const velocityWindowStart = current.occurredAt.getTime() - thresholds.velocityWindowMin * 60 * 1000;
-  const recentOutInWindow = recent.filter((tx) => tx.direction === 'out' && tx.occurredAt.getTime() >= velocityWindowStart);
+  const recentOutInWindow = recent.filter(
+    (tx) => tx.direction === 'out' && tx.occurredAt.getTime() >= velocityWindowStart,
+  );
   const velocityCount = recentOutInWindow.length + (current.direction === 'out' ? 1 : 0);
   if (velocityCount >= thresholds.velocityMaxTx) {
     rulesTriggered.push({
@@ -71,9 +73,9 @@ export function evaluateRules(
   }
 
   // 3. Volumen acumulado: salidas de las últimas 24h (recent ya viene acotado a esa ventana).
-  const dailyOutflow = recent
-    .filter((tx) => tx.direction === 'out')
-    .reduce((sum, tx) => sum + tx.amount, 0) + (current.direction === 'out' ? current.amount : 0);
+  const dailyOutflow =
+    recent.filter((tx) => tx.direction === 'out').reduce((sum, tx) => sum + tx.amount, 0) +
+    (current.direction === 'out' ? current.amount : 0);
   if (dailyOutflow > thresholds.dailyOutflowThreshold) {
     rulesTriggered.push({
       rule: DAILY_OUTFLOW_RULE,
@@ -84,9 +86,8 @@ export function evaluateRules(
 
   // 4. Posible fraccionamiento ("structuring"): el mismo monto exacto repetido varias veces en poco tiempo.
   const structuringWindowStart = current.occurredAt.getTime() - STRUCTURING_WINDOW_MS;
-  const sameAmountCount = recent.filter(
-    (tx) => tx.amount === current.amount && tx.occurredAt.getTime() >= structuringWindowStart,
-  ).length + 1; // +1 por la transacción actual
+  const sameAmountCount =
+    recent.filter((tx) => tx.amount === current.amount && tx.occurredAt.getTime() >= structuringWindowStart).length + 1; // +1 por la transacción actual
   if (sameAmountCount >= STRUCTURING_MIN_COUNT) {
     rulesTriggered.push({
       rule: STRUCTURING_RULE,

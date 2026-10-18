@@ -55,7 +55,9 @@ export class RiskScoringService {
   async handleTransactionCompleted(payload: TransactionCompletedPayload) {
     const accountId = payload.direction === 'out' ? payload.sourceAccountId : payload.destinationAccountId;
     if (!accountId) {
-      this.logger.warn(`transaction.completed sin cuenta para la dirección '${payload.direction}' (transactionId=${payload.transactionId}), descartado.`);
+      this.logger.warn(
+        `transaction.completed sin cuenta para la dirección '${payload.direction}' (transactionId=${payload.transactionId}), descartado.`,
+      );
       return;
     }
     const occurredAt = new Date(payload.createdAt);
@@ -66,7 +68,9 @@ export class RiskScoringService {
 
       const existing = await logRepo.findOne({ where: { transactionId: payload.transactionId, accountId } });
       if (existing) {
-        this.logger.debug(`transactionId=${payload.transactionId} accountId=${accountId} ya procesado, se ignora la reentrega.`);
+        this.logger.debug(
+          `transactionId=${payload.transactionId} accountId=${accountId} ya procesado, se ignora la reentrega.`,
+        );
         return;
       }
 

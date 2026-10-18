@@ -1,4 +1,16 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req, ServiceUnavailableException, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  ServiceUnavailableException,
+  UseGuards,
+} from '@nestjs/common';
 import { AdminAuditService } from '../common/staff/admin-audit.service';
 import { StaffAuthGuard, StaffRoles } from '../common/staff/staff-auth.guard';
 import { EventConsumerService } from '../events/event-consumer.service';
@@ -56,7 +68,12 @@ export class AdminFraudController {
   async requeue(@Req() req: any) {
     try {
       const result = await this.consumer.requeueDeadLetters(100);
-      await this.audit.record(req.staff, { action: 'dlq.requeue', targetType: 'queue', targetId: 'fraud-service', details: result });
+      await this.audit.record(req.staff, {
+        action: 'dlq.requeue',
+        targetType: 'queue',
+        targetId: 'fraud-service',
+        details: result,
+      });
       return result;
     } catch (e) {
       throw new ServiceUnavailableException((e as Error).message);
