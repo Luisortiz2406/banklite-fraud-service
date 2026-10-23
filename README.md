@@ -1,5 +1,7 @@
 # Fraud Service (`fraud-service`)
 
+[![CI](https://github.com/Luisortiz2406/banklite-fraud-service/actions/workflows/ci.yml/badge.svg)](https://github.com/Luisortiz2406/banklite-fraud-service/actions/workflows/ci.yml)
+
 Detección de fraude: califica el riesgo de cada movimiento con reglas y genera alertas para revisión.
 
 Parte de **BankLite**, banco digital académico construido con microservicios. Cada
@@ -149,10 +151,24 @@ npm test
 
 ## Despliegue
 
-Desplegado en Railway (raíz del servicio: esta carpeta, `railway.json` con
-`healthcheckPath: /health`). El servicio no tiene dominio público propio: se accede
+Desplegado en Railway **desde este repositorio** (rama `main`): `railway.json` en la
+raíz define el build por `Dockerfile` y el health check en `/health`; cada push a
+`main` redespliega el servicio. El servicio no tiene dominio público propio: se accede
 por el gateway.
 
-- Estado del servicio y de su base: https://api-gateway-production-dd7f.up.railway.app/health (entrada `fraud-service`: `status` y `database` deben estar en `ok`)
+- Estado del servicio y de su base: [https://api-gateway-production-dd7f.up.railway.app/health](https://api-gateway-production-dd7f.up.railway.app/health) (entrada `fraud-service`: `status` y `database` deben estar en `ok`)
 - Rutas de este servicio: `https://api-gateway-production-dd7f.up.railway.app/fraud/...`
 - Aplicación web: https://frontend-production-eff3c.up.railway.app
+
+## Repositorios relacionados
+
+Servicios de BankLite con los que se comunica este. **Llama a** / **Lo llama**: HTTP
+por la red interna; **Recibe** / **Envía**: eventos en RabbitMQ. Cada uno vive y se
+despliega desde su propio repositorio.
+
+| Repositorio | Relación con este servicio |
+|---|---|
+| [banklite-api-gateway](https://github.com/Luisortiz2406/banklite-api-gateway) | **Lo llama:** punto de entrada público, le enruta las rutas de este servicio |
+| [banklite-ledger-service](https://github.com/Luisortiz2406/banklite-ledger-service) | **Recibe:** `transaction.completed` (se evalúa con las reglas de riesgo) |
+| [banklite-notification-service](https://github.com/Luisortiz2406/banklite-notification-service) | **Envía:** `fraud.alert` |
+| [banklite-compliance-service](https://github.com/Luisortiz2406/banklite-compliance-service) | **Envía:** `fraud.alert` |
