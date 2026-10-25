@@ -3,12 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, MoreThanOrEqual } from 'typeorm';
 import { OutboxService } from '../events/outbox.service';
+import { LoginContextsService } from '../geo/login-contexts.service';
 import { FlaggedTransaction } from './entities/flagged-transaction.entity';
 import { FraudTransactionLog } from './entities/fraud-transaction-log.entity';
 import { RiskScore } from './entities/risk-score.entity';
 import { evaluateRules, RiskThresholds } from './risk-rules';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_SCORE = 100;
 const FRAUD_ALERT_EVENT = 'fraud.alert';
 
 /** Payload tal como lo publica ledger-service en `transaction.completed` (ver eventPayload() en ledger.service.ts). */
@@ -32,6 +34,7 @@ export class RiskScoringService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly config: ConfigService,
     private readonly outbox: OutboxService,
+    private readonly logins: LoginContextsService,
   ) {}
 
   private thresholds(): RiskThresholds {
@@ -100,11 +103,13 @@ export class RiskScoringService {
         }),
       );
 
-      const { score, rulesTriggered } = evaluateRules(
-        { amount, direction: payload.direction, occurredAt },
-        recent,
-        this.thresholds(),
-      );
+      const evaluated = evaluateRules({ amount, direction: payload.direction, occurredAt }, recent, this.thresholds());
+      // Reglas geográficas del último inicio de sesión del cliente (país nuevo, viaje
+      // imposible, Tor): solo cuentan para las salidas de dinero.
+      const geoRules =
+        payload.direction === 'out' ? await this.logins.geoRulesForTransaction(payload.idUser, occurredAt) : [];
+      const rulesTriggered = [...evaluated.rulesTriggered, ...geoRules];
+      const score = Math.min(MAX_SCORE, evaluated.score + geoRules.reduce((sum, rule) => sum + rule.points, 0));
 
       const scoreRepo = manager.getRepository(RiskScore);
       await scoreRepo.save(
@@ -112,7 +117,7 @@ export class RiskScoringService {
           transactionId: payload.transactionId,
           accountId,
           score,
-          modelVersion: 'rules-v1',
+          modelVersion: geoRules.length ? 'rules-v2-geo' : 'rules-v1',
           rulesTriggered,
         }),
       );

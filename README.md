@@ -17,9 +17,27 @@ configurables. Si supera el umbral, marca el movimiento para revisión y emite
 **Reglas de negocio principales**
 
 - Reglas: monto alto, velocidad (muchos movimientos en pocos minutos), salidas del día y fraccionamiento (structuring).
+- **Reglas geográficas** de cada inicio de sesión (lo reporta auth-service):
+  - **país nuevo**: país que el cliente no usó en 90 días; el primer inicio de sesión no cuenta (20 puntos);
+  - **viaje imposible**: el inicio de sesión exitoso anterior fue desde otro país hace menos de 120 min (30);
+  - **nodo de salida de Tor** (40).
+
+  Esos puntos se suman a las **salidas de dinero** del cliente durante las 12 h siguientes al inicio de sesión.
 - Puntaje ≥ `FRAUD_REVIEW_THRESHOLD` → alerta `pending` y evento `fraud.alert`.
 - Idempotente por `transactionId`: el mismo evento no se califica dos veces.
-- Solo roles `compliance` y `admin` ven y resuelven alertas.
+- Solo roles `compliance` y `admin` ven y resuelven alertas, y ven los inicios de sesión de un cliente.
+
+**Geolocalización por IP y privacidad**
+
+- **Base local:** GeoLite2-Country de MaxMind, consultada **dentro del servicio**: la IP no sale de BankLite. La lista pública de nodos de salida de Tor se renueva cada 6 h.
+- **Qué se guarda (tabla `login_contexts`):** la red recortada (`/24` en IPv4 o `/48` en IPv6), una huella HMAC-SHA256 con `FRAUD_IP_HASH_SECRET`, el país, si es Tor y las reglas. **La IP completa no se guarda ni aparece en los logs.**
+- **Purga diaria** de lo que tenga más de 90 días.
+- **Descarga de la base:**
+  - se guarda en `fraud_db` (tabla `geo_databases`), porque el disco de Railway no sobrevive a un reinicio: **reiniciar no descarga**;
+  - se renueva cada 7 días, con **como mucho un intento cada 24 h**, exitoso o no, aunque el servicio se reinicie (respeta el límite diario de MaxMind);
+  - se verifica el SHA256.
+- **Si falta algo** (llaves, base, lista de Tor o secreto de huella), el servicio sigue funcionando: `/health` responde `"geo": "degradada"` con los motivos y las reglas de IP no suman puntos.
+- Datos de geolocalización: GeoLite2 de MaxMind, https://www.maxmind.com.
 
 **Comunicación con otros servicios**
 
@@ -28,8 +46,8 @@ configurables. Si supera el umbral, marca el movimiento para revisión y emite
 | Publica eventos | `fraud.alert` → notification, compliance |
 | Consume eventos | `transaction.completed` (ledger) |
 | Llama a | — |
-| Lo llaman | api-gateway (rutas `/fraud/*`) |
-| Integraciones externas | — |
+| Lo llaman | api-gateway (rutas `/fraud/*`)<br>auth-service: `POST /internal/fraud/logins` (clave interna `auth`) |
+| Integraciones externas | MaxMind GeoLite2-Country (descarga semanal de la base) y la lista de nodos de salida de Tor (torproject.org) |
 
 Todo el tráfico externo entra por el **api-gateway** (único servicio público), que
 enruta por prefijo (`/fraud`), aplica CORS y límite de peticiones, y bloquea las
@@ -52,6 +70,8 @@ rutas internas.
 | `flagged_transactions` | Alertas y su resolución. |
 | `fraud_outbox` | Outbox de `fraud.alert`. |
 | `admin_audit` | Bitácora de acciones del panel en este servicio (quién, rol, qué y cuándo). |
+| `login_contexts` | Inicios de sesión: red recortada, huella HMAC, país, Tor y reglas (sin la IP completa; purga a los 90 días). |
+| `geo_databases` | Copia de la base GeoLite2-Country y hora del último intento de descarga. |
 
 En `database/`:
 
@@ -104,7 +124,13 @@ A través del gateway las rutas son las mismas (`http://localhost:8080/fraud/...
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| GET | `/health` | Estado del servicio y de su base (`SELECT 1`); responde 503 con `status: down` si la base no contesta. |
+| GET | `/health` | Estado del servicio y de su base (`SELECT 1`); responde 503 con `status: down` si la base no contesta. Además `geo`: `ok` o `degradada` (con `motivos`), sin cambiar el `status`. |
+
+### Internos (solo red privada, `x-internal-key`; el gateway responde 404 desde afuera)
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/internal/fraud/logins` | `{idUser, sessionId?, ip, outcome, occurredAt?}`: inicio de sesión que reporta **solo auth-service**. Responde 202 con `{stored}`. |
 
 ### Panel administrativo (`Authorization: Bearer <token de empleado>`; el gateway además valida la sesión)
 
@@ -117,6 +143,7 @@ A través del gateway las rutas son las mismas (`http://localhost:8080/fraud/...
 | GET | `/fraud/admin/dlq` | cualquier empleado | Mensajes en la cola de errores (DLQ). |
 | GET | `/fraud/admin/dlq/messages` | cualquier empleado | Contenido de los mensajes de la DLQ. |
 | POST | `/fraud/admin/dlq/requeue` | admin | Reencola mensajes de la DLQ (solo administradores). |
+| GET | `/fraud/admin/users/:idUser/logins` | compliance, admin | Inicios de sesión recientes del cliente: país, red recortada, Tor y reglas (nunca la IP ni su huella). Queda en la bitácora. |
 
 ## Variables de entorno
 
@@ -142,12 +169,29 @@ todas se configuran como variables del servicio, nunca en el código.
 | `RABBITMQ_QUEUE` | No | `fraud-service.transaction-completed` | Cola propia del servicio (con `<cola>.retry` y `<cola>.dlq`). |
 | `EVENT_MAX_RETRIES` | No | `5` | Reintentos de un evento antes de mandarlo a la DLQ. |
 | `EVENT_RETRY_DELAY_MS` | No | `10000` | Espera entre reintentos de un evento. |
+| `INTERNAL_TRUSTED_KEYS` | Para recibir inicios de sesión | `auth:<clave-de-auth>` | Quién puede llamar a `/internal/fraud/logins` (solo `auth`). Sin ella se rechaza todo. |
+| `MAXMIND_ACCOUNT_ID` | Para la geolocalización | — | Número de cuenta de MaxMind (no es secreto). |
+| `MAXMIND_LICENSE_KEY` | Para la geolocalización | — | Llave de licencia de MaxMind (secreta) para descargar GeoLite2. |
+| `FRAUD_IP_HASH_SECRET` | Para guardar inicios de sesión | — | Secreto de la huella HMAC de la IP (32+ caracteres aleatorios). Sin él no se guarda ningún inicio de sesión; si es débil, el servicio no arranca. |
+| `FRAUD_GEO_NEW_COUNTRY_POINTS` | No | `20` | Puntos de «país nuevo». |
+| `FRAUD_GEO_IMPOSSIBLE_TRAVEL_POINTS` | No | `30` | Puntos de «viaje imposible». |
+| `FRAUD_GEO_TOR_POINTS` | No | `40` | Puntos de «nodo de salida de Tor». |
+| `FRAUD_GEO_TRAVEL_WINDOW_MIN` | No | `120` | Dos países distintos en menos de estos minutos = viaje imposible. |
+| `FRAUD_GEO_SESSION_HOURS` | No | `12` | Horas después de un inicio de sesión en que sus reglas cuentan para las transacciones. |
+| `FRAUD_GEO_RETENTION_DAYS` | No | `90` | Historial para «país nuevo» y retención de los inicios de sesión (purga diaria). |
 
 ## Pruebas
 
 ```bash
-npm test
+npm test   # con TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres para las de base
 ```
+
+- Reglas geográficas (incluidos los límites de 119 y 121 min), recorte de prefijos y huella.
+- Descarga de GeoLite2: SHA256, copia guardada (reiniciar no descarga), un intento cada 24 h y modo degradado.
+- Contextos sin la IP completa, purga a 90 días y suma de puntos a las transferencias.
+- Permisos del endpoint interno (solo `auth`) y del panel (solo `compliance` y `admin`).
+
+`test/fixtures/GeoIP2-Country-Test.mmdb` es la base de prueba de MaxMind ([MaxMind-DB](https://github.com/maxmind/MaxMind-DB), licencia MIT/Apache-2.0); no tiene datos reales.
 
 ## Despliegue
 
@@ -169,6 +213,7 @@ despliega desde su propio repositorio.
 | Repositorio | Relación con este servicio |
 |---|---|
 | [banklite-api-gateway](https://github.com/Luisortiz2406/banklite-api-gateway) | **Lo llama:** punto de entrada público, le enruta las rutas de este servicio |
+| [banklite-auth-service](https://github.com/Luisortiz2406/banklite-auth-service) | **Lo llama:** reporta cada inicio de sesión con la IP del cliente (`POST /internal/fraud/logins`) |
 | [banklite-ledger-service](https://github.com/Luisortiz2406/banklite-ledger-service) | **Recibe:** `transaction.completed` (se evalúa con las reglas de riesgo) |
 | [banklite-notification-service](https://github.com/Luisortiz2406/banklite-notification-service) | **Envía:** `fraud.alert` |
 | [banklite-compliance-service](https://github.com/Luisortiz2406/banklite-compliance-service) | **Envía:** `fraud.alert` |

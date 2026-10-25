@@ -2,6 +2,7 @@ import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { Response } from 'express';
 import { DataSource } from 'typeorm';
+import { GeoService } from './geo/geo.service';
 
 // Si la base no contesta en este tiempo, se considera caída.
 const DB_CHECK_TIMEOUT_MS = 1_500;
@@ -9,11 +10,16 @@ const DB_CHECK_TIMEOUT_MS = 1_500;
 /**
  * GET /health: el servicio está arriba y su base responde (SELECT 1). Si la base
  * no responde, contesta 503 con status "down": el gateway y Railway lo ven caído.
- * Igual en todos los microservicios salvo el nombre del servicio.
+ * Igual en todos los microservicios salvo el nombre del servicio; en fraud-service
+ * además informa la geolocalización por IP ("geo": ok o degradada, con los motivos),
+ * que no cambia el status: sin geo el servicio sigue calificando transacciones.
  */
 @Controller('health')
 export class HealthController {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly geo: GeoService,
+  ) {}
 
   @Get()
   async check(@Res({ passthrough: true }) res: Response) {
@@ -25,6 +31,7 @@ export class HealthController {
       service: 'fraud-service',
       database: dbOk ? 'ok' : 'down',
       databaseLatencyMs: Date.now() - start,
+      ...this.geo.health(),
       timestamp: new Date().toISOString(),
     };
   }
