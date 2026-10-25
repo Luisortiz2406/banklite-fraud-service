@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -14,6 +15,7 @@ import {
 import { AdminAuditService } from '../common/staff/admin-audit.service';
 import { StaffAuthGuard, StaffRoles } from '../common/staff/staff-auth.guard';
 import { EventConsumerService } from '../events/event-consumer.service';
+import { LoginContextsService } from '../geo/login-contexts.service';
 import { AdminFraudService } from './admin-fraud.service';
 import { AdminFlagsQueryDto, AuditQueryDto, ResolveFlagDto } from './admin.dto';
 
@@ -25,6 +27,7 @@ export class AdminFraudController {
     private readonly admin: AdminFraudService,
     private readonly audit: AdminAuditService,
     private readonly consumer: EventConsumerService,
+    private readonly loginContexts: LoginContextsService,
   ) {}
 
   @Get('flags')
@@ -43,6 +46,24 @@ export class AdminFraudController {
   @StaffRoles('compliance', 'admin')
   resolve(@Param('id') id: string, @Body() dto: ResolveFlagDto, @Req() req: any) {
     return this.admin.resolve(id, dto.status, dto.note, req.staff);
+  }
+
+  /**
+   * Inicios de sesión recientes de un cliente: país, red recortada (/24 o /48),
+   * Tor y reglas geográficas. Nunca la IP completa ni su huella. Cada consulta
+   * queda en la auditoría.
+   */
+  @Get('users/:idUser/logins')
+  @StaffRoles('compliance', 'admin')
+  async userLogins(@Param('idUser', ParseUUIDPipe) idUser: string, @Req() req: any) {
+    const items = await this.loginContexts.listForUser(idUser);
+    await this.audit.record(req.staff, {
+      action: 'fraud.logins.view',
+      targetType: 'user',
+      targetId: idUser,
+      details: { count: items.length },
+    });
+    return { items };
   }
 
   @Get('audit')

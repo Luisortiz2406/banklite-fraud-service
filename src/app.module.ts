@@ -9,31 +9,54 @@ import { RiskScore } from './risk/entities/risk-score.entity';
 import { RiskModule } from './risk/risk.module';
 import { HealthController } from './health.controller';
 import { validateEnv } from './config/env.validation';
+import { GeoDatabase } from './geo/entities/geo-database.entity';
+import { LoginContext } from './geo/entities/login-context.entity';
+import { readGeoConfig } from './geo/geo-config';
+import { GeoModule } from './geo/geo.module';
+
+const validateCommon = validateEnv(
+  [
+    { key: 'STAFF_JWT_SECRET', type: 'secret' },
+    { key: 'DATABASE_URL', type: 'url' },
+    { key: 'RABBITMQ_URL', type: 'url', optional: true },
+    // Quién puede reportar inicios de sesión (POST /internal/fraud/logins): "auth:<clave>".
+    { key: 'INTERNAL_TRUSTED_KEYS', type: 'trusted-keys', optional: true },
+  ],
+  ['STAFF_JWT_SECRET', 'FRAUD_IP_HASH_SECRET'],
+);
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
-      validate: validateEnv(
-        [
-          { key: 'STAFF_JWT_SECRET', type: 'secret' },
-          { key: 'DATABASE_URL', type: 'url' },
-          { key: 'RABBITMQ_URL', type: 'url', optional: true },
-        ],
-        [],
-      ),
+      // Secretos comunes y, de la geolocalización, solo que FRAUD_IP_HASH_SECRET no
+      // sea débil: sin llaves de MaxMind el servicio arranca con la geo degradada.
+      validate: (config) => {
+        const validated = validateCommon(config);
+        readGeoConfig(validated);
+        return validated;
+      },
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         type: 'postgres' as const,
         url: config.get<string>('DATABASE_URL'),
-        entities: [FraudTransactionLog, RiskScore, FlaggedTransaction, FraudOutbox, AdminAudit],
+        entities: [
+          FraudTransactionLog,
+          RiskScore,
+          FlaggedTransaction,
+          FraudOutbox,
+          AdminAudit,
+          GeoDatabase,
+          LoginContext,
+        ],
         synchronize: true,
         logging: false,
       }),
     }),
+    GeoModule,
     RiskModule,
   ],
   controllers: [HealthController],

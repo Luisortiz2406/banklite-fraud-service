@@ -5,12 +5,14 @@ import { Test } from '@nestjs/testing';
 import { AdminAuditService } from '../common/staff/admin-audit.service';
 import { StaffAuthGuard, StaffRole } from '../common/staff/staff-auth.guard';
 import { EventConsumerService } from '../events/event-consumer.service';
+import { LoginContextsService } from '../geo/login-contexts.service';
 import { AdminFraudController } from './admin-fraud.controller';
 import { AdminFraudService } from './admin-fraud.service';
 import request = require('supertest');
 
 const SECRET = 'secreto-de-prueba-para-tokens-de-empleado-0123456789';
 const FLAG_ID = '22222222-2222-4222-8222-222222222222';
+const USER_ID = '33333333-3333-4333-8333-333333333333';
 
 describe('Permisos del panel de fraude (403 por rol)', () => {
   let app: INestApplication;
@@ -21,6 +23,8 @@ describe('Permisos del panel de fraude (403 por rol)', () => {
     resolve: jest.fn().mockResolvedValue({ id: FLAG_ID, status: 'dismissed' }),
   };
   const consumer = { deadLetterStats: jest.fn().mockResolvedValue({}) };
+  const loginContexts = { listForUser: jest.fn().mockResolvedValue([{ country: 'CO', ipPrefix: '190.60.37.0/24' }]) };
+  const audit = { list: jest.fn().mockResolvedValue({ items: [] }), record: jest.fn().mockResolvedValue(undefined) };
 
   const token = (role: StaffRole) =>
     `Bearer ${jwt.sign({ sub: `staff-${role}`, type: 'staff', role, username: role }, { secret: SECRET })}`;
@@ -36,7 +40,8 @@ describe('Permisos del panel de fraude (403 por rol)', () => {
           useValue: { get: (key: string) => (key === 'STAFF_JWT_SECRET' ? SECRET : undefined) },
         },
         { provide: AdminFraudService, useValue: admin },
-        { provide: AdminAuditService, useValue: { list: jest.fn().mockResolvedValue({ items: [] }) } },
+        { provide: AdminAuditService, useValue: audit },
+        { provide: LoginContextsService, useValue: loginContexts },
         { provide: EventConsumerService, useValue: consumer },
       ],
     }).compile();
@@ -80,6 +85,26 @@ describe('Permisos del panel de fraude (403 por rol)', () => {
       'dismissed',
       resolveBody.note,
       expect.objectContaining({ role }),
+    );
+  });
+
+  it('Soporte NO ve los inicios de sesión (país y red) de un cliente (403)', async () => {
+    await request(app.getHttpServer())
+      .get(`/fraud/admin/users/${USER_ID}/logins`)
+      .set('Authorization', token('support'))
+      .expect(403);
+    expect(loginContexts.listForUser).not.toHaveBeenCalled();
+  });
+
+  it.each<StaffRole>(['compliance', 'admin'])('%s ve los inicios de sesión y queda en la auditoría', async (role) => {
+    const res = await request(app.getHttpServer())
+      .get(`/fraud/admin/users/${USER_ID}/logins`)
+      .set('Authorization', token(role))
+      .expect(200);
+    expect(res.body.items[0]).toEqual({ country: 'CO', ipPrefix: '190.60.37.0/24' });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ role }),
+      expect.objectContaining({ action: 'fraud.logins.view', targetId: USER_ID }),
     );
   });
 
