@@ -6,6 +6,7 @@ import { AdminFraudController } from '../admin/admin-fraud.controller';
 import { AdminFraudService } from '../admin/admin-fraud.service';
 import { AdminAudit } from '../common/staff/admin-audit.entity';
 import { AdminAuditService } from '../common/staff/admin-audit.service';
+import { InternalKeyGuard } from '../common/guards/internal-key.guard';
 import { StaffAuthGuard } from '../common/staff/staff-auth.guard';
 import { EventConsumerService } from '../events/event-consumer.service';
 import { EventPublisherService } from '../events/event-publisher.service';
@@ -15,6 +16,7 @@ import { FlaggedTransaction } from './entities/flagged-transaction.entity';
 import { FraudTransactionLog } from './entities/fraud-transaction-log.entity';
 import { RiskScore } from './entities/risk-score.entity';
 import { RiskScoringService } from './risk-scoring.service';
+import { InternalRiskController } from './internal-risk.controller';
 
 @Module({
   imports: [
@@ -22,7 +24,7 @@ import { RiskScoringService } from './risk-scoring.service';
     JwtModule.register({}),
     TypeOrmModule.forFeature([FraudTransactionLog, RiskScore, FlaggedTransaction, FraudOutbox, AdminAudit]),
   ],
-  controllers: [AdminFraudController],
+  controllers: [AdminFraudController, InternalRiskController],
   providers: [
     RiskScoringService,
     EventConsumerService,
@@ -31,6 +33,7 @@ import { RiskScoringService } from './risk-scoring.service';
     AdminFraudService,
     AdminAuditService,
     StaffAuthGuard,
+    InternalKeyGuard,
   ],
 })
 export class RiskModule {}
