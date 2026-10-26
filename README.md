@@ -46,7 +46,7 @@ configurables. Si supera el umbral, marca el movimiento para revisión y emite
 | Publica eventos | `fraud.alert` → notification, compliance |
 | Consume eventos | `transaction.completed` (ledger) |
 | Llama a | — |
-| Lo llaman | api-gateway (rutas `/fraud/*`)<br>auth-service: `POST /internal/fraud/logins` (clave interna `auth`) |
+| Lo llaman | api-gateway (rutas `/fraud/*`)<br>auth-service: `POST /internal/fraud/logins` (clave interna `auth`)<br>account-service: `GET /internal/fraud/users/:idUser/resumen-cierre` (clave interna `account`) |
 | Integraciones externas | MaxMind GeoLite2-Country (descarga semanal de la base) y la lista de nodos de salida de Tor (torproject.org) |
 
 Todo el tráfico externo entra por el **api-gateway** (único servicio público), que
@@ -131,6 +131,7 @@ A través del gateway las rutas son las mismas (`http://localhost:8080/fraud/...
 | Método | Ruta | Descripción |
 |---|---|---|
 | POST | `/internal/fraud/logins` | `{idUser, sessionId?, ip, outcome, occurredAt?}`: inicio de sesión que reporta **solo auth-service**. Responde 202 con `{stored}`. |
+| GET | `/internal/fraud/users/:idUser/resumen-cierre` | Solo **account-service** («Cancelar mi cuenta»): `{alertasAbiertas, sinPendientes}`. Solo el número de alertas `pending`, nunca su detalle. |
 
 ### Panel administrativo (`Authorization: Bearer <token de empleado>`; el gateway además valida la sesión)
 
@@ -169,7 +170,7 @@ todas se configuran como variables del servicio, nunca en el código.
 | `RABBITMQ_QUEUE` | No | `fraud-service.transaction-completed` | Cola propia del servicio (con `<cola>.retry` y `<cola>.dlq`). |
 | `EVENT_MAX_RETRIES` | No | `5` | Reintentos de un evento antes de mandarlo a la DLQ. |
 | `EVENT_RETRY_DELAY_MS` | No | `10000` | Espera entre reintentos de un evento. |
-| `INTERNAL_TRUSTED_KEYS` | Para recibir inicios de sesión | `auth:<clave-de-auth>` | Quién puede llamar a `/internal/fraud/logins` (solo `auth`). Sin ella se rechaza todo. |
+| `INTERNAL_TRUSTED_KEYS` | Para las rutas internas | `auth:<clave-de-auth>,account:<clave-de-account>` | `auth` reporta inicios de sesión y `account` pide el resumen de cierre; cada uno solo a lo suyo (403 si no). Sin ella se rechaza todo. |
 | `MAXMIND_ACCOUNT_ID` | Para la geolocalización | — | Número de cuenta de MaxMind (no es secreto). |
 | `MAXMIND_LICENSE_KEY` | Para la geolocalización | — | Llave de licencia de MaxMind (secreta) para descargar GeoLite2. |
 | `FRAUD_IP_HASH_SECRET` | Para guardar inicios de sesión | — | Secreto de la huella HMAC de la IP (32+ caracteres aleatorios). Sin él no se guarda ningún inicio de sesión; si es débil, el servicio no arranca. |
@@ -213,6 +214,7 @@ despliega desde su propio repositorio.
 | Repositorio | Relación con este servicio |
 |---|---|
 | [banklite-api-gateway](https://github.com/Luisortiz2406/banklite-api-gateway) | **Lo llama:** punto de entrada público, le enruta las rutas de este servicio |
+| [banklite-account-service](https://github.com/Luisortiz2406/banklite-account-service) | **Lo llama:** resumen de alertas abiertas para cancelar la cuenta |
 | [banklite-auth-service](https://github.com/Luisortiz2406/banklite-auth-service) | **Lo llama:** reporta cada inicio de sesión con la IP del cliente (`POST /internal/fraud/logins`) |
 | [banklite-ledger-service](https://github.com/Luisortiz2406/banklite-ledger-service) | **Recibe:** `transaction.completed` (se evalúa con las reglas de riesgo) |
 | [banklite-notification-service](https://github.com/Luisortiz2406/banklite-notification-service) | **Envía:** `fraud.alert` |
