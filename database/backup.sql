@@ -28,6 +28,8 @@ SET row_security = off;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
 
 
+--
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -40,13 +42,13 @@ CREATE TABLE public.admin_audit (
     id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
     staff_id character varying NOT NULL,
     staff_username character varying NOT NULL,
+    staff_role character varying,
     action character varying NOT NULL,
     target_type character varying NOT NULL,
     target_id character varying NOT NULL,
     reason character varying(300),
     details jsonb,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    staff_role character varying
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -104,6 +106,40 @@ CREATE TABLE public.fraud_transaction_log (
 
 
 --
+-- Name: geo_databases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.geo_databases (
+    edition character varying(40) NOT NULL,
+    data bytea,
+    sha256 character(64),
+    downloaded_at timestamp with time zone,
+    last_attempt_at timestamp with time zone,
+    last_error character varying(200)
+);
+
+
+--
+-- Name: login_contexts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.login_contexts (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    id_user uuid NOT NULL,
+    session_id uuid,
+    outcome character varying(10) NOT NULL,
+    occurred_at timestamp with time zone NOT NULL,
+    ip_prefix character varying(50) NOT NULL,
+    ip_hash character(64) NOT NULL,
+    country character varying(2),
+    is_tor boolean,
+    geo_status character varying(15) NOT NULL,
+    rules_triggered jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: risk_scores; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -122,7 +158,7 @@ CREATE TABLE public.risk_scores (
 -- Data for Name: admin_audit; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-COPY public.admin_audit (id, staff_id, staff_username, action, target_type, target_id, reason, details, created_at, staff_role) FROM stdin;
+COPY public.admin_audit (id, staff_id, staff_username, staff_role, action, target_type, target_id, reason, details, created_at) FROM stdin;
 \.
 
 
@@ -148,11 +184,27 @@ COPY public.fraud_outbox (id, routing_key, payload, occurred_at, published_at, a
 --
 
 COPY public.fraud_transaction_log (id, transaction_id, account_id, id_user, type, direction, amount, currency, occurred_at, created_at) FROM stdin;
-43000000-0000-4000-8000-000000000012	7b000000-0000-4000-8000-000000000001	3a000000-0000-4000-8000-000000000001	11111111-1111-4111-8111-111111111111	deposit	in	1000000.00	COP	2026-10-01 15:00:00+00	2026-10-18 06:13:25.698037+00
-43000000-0000-4000-8000-000000000021	7b000000-0000-4000-8000-000000000002	3a000000-0000-4000-8000-000000000001	11111111-1111-4111-8111-111111111111	transfer	out	150000.00	COP	2026-10-02 15:00:00+00	2026-10-18 06:13:25.698037+00
-43000000-0000-4000-8000-000000000022	7b000000-0000-4000-8000-000000000002	3a000000-0000-4000-8000-000000000002	22222222-2222-4222-8222-222222222222	transfer	in	150000.00	COP	2026-10-02 15:00:00+00	2026-10-18 06:13:25.698037+00
-43000000-0000-4000-8000-000000000031	7b000000-0000-4000-8000-000000000003	3a000000-0000-4000-8000-000000000001	11111111-1111-4111-8111-111111111111	saving	out	200000.00	COP	2026-10-03 15:00:00+00	2026-10-18 06:13:25.698037+00
-43000000-0000-4000-8000-000000000041	7b000000-0000-4000-8000-000000000004	3a000000-0000-4000-8000-000000000001	11111111-1111-4111-8111-111111111111	payment	out	85000.00	COP	2026-10-04 15:00:00+00	2026-10-18 06:13:25.698037+00
+43000000-0000-4000-8000-000000000012	7b000000-0000-4000-8000-000000000001	3a000000-0000-4000-8000-000000000001	11111111-1111-4111-8111-111111111111	deposit	in	1000000.00	COP	2026-10-01 15:00:00+00	2026-11-02 17:29:35.19768+00
+43000000-0000-4000-8000-000000000021	7b000000-0000-4000-8000-000000000002	3a000000-0000-4000-8000-000000000001	11111111-1111-4111-8111-111111111111	transfer	out	150000.00	COP	2026-10-02 15:00:00+00	2026-11-02 17:29:35.19768+00
+43000000-0000-4000-8000-000000000022	7b000000-0000-4000-8000-000000000002	3a000000-0000-4000-8000-000000000002	22222222-2222-4222-8222-222222222222	transfer	in	150000.00	COP	2026-10-02 15:00:00+00	2026-11-02 17:29:35.19768+00
+43000000-0000-4000-8000-000000000031	7b000000-0000-4000-8000-000000000003	3a000000-0000-4000-8000-000000000001	11111111-1111-4111-8111-111111111111	saving	out	200000.00	COP	2026-10-03 15:00:00+00	2026-11-02 17:29:35.19768+00
+43000000-0000-4000-8000-000000000041	7b000000-0000-4000-8000-000000000004	3a000000-0000-4000-8000-000000000001	11111111-1111-4111-8111-111111111111	payment	out	85000.00	COP	2026-10-04 15:00:00+00	2026-11-02 17:29:35.19768+00
+\.
+
+
+--
+-- Data for Name: geo_databases; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.geo_databases (edition, data, sha256, downloaded_at, last_attempt_at, last_error) FROM stdin;
+\.
+
+
+--
+-- Data for Name: login_contexts; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.login_contexts (id, id_user, session_id, outcome, occurred_at, ip_prefix, ip_hash, country, is_tor, geo_status, rules_triggered, created_at) FROM stdin;
 \.
 
 
@@ -163,6 +215,14 @@ COPY public.fraud_transaction_log (id, transaction_id, account_id, id_user, type
 COPY public.risk_scores (id, transaction_id, account_id, score, model_version, rules_triggered, created_at) FROM stdin;
 43000000-0000-4000-8000-0000000000f1	7b000000-0000-4000-8000-000000000001	3a000000-0000-4000-8000-000000000001	40	rules-v1	[{"rule": "monto_alto", "detail": "Consignación de $1.000.000", "points": 40}]	2026-10-01 15:00:00+00
 \.
+
+
+--
+-- Name: geo_databases PK_175a1a1a88f1bdc38036c358852; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.geo_databases
+    ADD CONSTRAINT "PK_175a1a1a88f1bdc38036c358852" PRIMARY KEY (edition);
 
 
 --
@@ -203,6 +263,14 @@ ALTER TABLE ONLY public.risk_scores
 
 ALTER TABLE ONLY public.flagged_transactions
     ADD CONSTRAINT "PK_c4682a847e361fb5210a563b147" PRIMARY KEY (id);
+
+
+--
+-- Name: login_contexts PK_c636e31b3670f2b2b933ff5eb1f; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.login_contexts
+    ADD CONSTRAINT "PK_c636e31b3670f2b2b933ff5eb1f" PRIMARY KEY (id);
 
 
 --
@@ -252,6 +320,20 @@ CREATE INDEX idx_fraud_tx_log_account_time ON public.fraud_transaction_log USING
 --
 
 CREATE UNIQUE INDEX idx_fraud_tx_log_unique ON public.fraud_transaction_log USING btree (transaction_id, account_id);
+
+
+--
+-- Name: idx_login_contexts_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_login_contexts_time ON public.login_contexts USING btree (occurred_at);
+
+
+--
+-- Name: idx_login_contexts_user_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_login_contexts_user_time ON public.login_contexts USING btree (id_user, occurred_at);
 
 
 --
