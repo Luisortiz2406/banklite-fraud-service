@@ -194,6 +194,10 @@ npm test   # con TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/p
 
 `test/fixtures/GeoIP2-Country-Test.mmdb` es la base de prueba de MaxMind ([MaxMind-DB](https://github.com/maxmind/MaxMind-DB), licencia MIT/Apache-2.0); no tiene datos reales.
 
+Reglas de puntaje (`risk-rules.spec.ts`): monto alto, velocidad, volumen del día y fraccionamiento, cada una con su borde; suman de forma independiente y el total nunca pasa de 100. Consumidor de `transaction.completed` (movimiento por emisor y receptor, mensajes inválidos a la DLQ, fallos a reintento), resolución de alertas auditada, outbox de `fraud.alert`, guards, `/health` y validación de configuración.
+
+**Cobertura:** el pipeline la muestra en el resumen de cada corrida y exige un mínimo de 70 % de líneas y 50 % de ramas (`umbral-lineas` y `umbral-ramas` en `deploy.yml`). Hoy está en 89,1 % de líneas y 82,6 % de ramas.
+
 ## Despliegue
 
 Lo despliega **GitHub Actions** (`.github/workflows/deploy.yml`, que usa el workflow
