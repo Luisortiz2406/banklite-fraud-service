@@ -48,7 +48,7 @@ export class LoginContext {
   @Column({ name: 'geo_status', type: 'varchar', length: 15 })
   geoStatus: GeoStatus;
 
-  @Column({ name: 'rules_triggered', type: 'jsonb', default: () => "'[]'::jsonb" })
+  @Column({ name: 'rules_triggered', type: 'jsonb', default: () => "'[]'" })
   rulesTriggered: RuleTriggered[];
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

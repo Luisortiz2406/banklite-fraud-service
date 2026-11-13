@@ -1,5 +1,5 @@
 -- Esquema de fraud_db (fraud-service). Generado con pg_dump --schema-only desde la base
--- que crea TypeORM a partir de las entidades (src/**/entities, synchronize: true).
+-- que crea TypeORM a partir de las entidades (src/entities.ts, synchronize: true).
 -- Restaurar en una base vacía:  psql "$DATABASE_URL" -f database/schema.sql
 
 --
@@ -28,6 +28,8 @@ SET row_security = off;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
 
 
+--
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -40,13 +42,13 @@ CREATE TABLE public.admin_audit (
     id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
     staff_id character varying NOT NULL,
     staff_username character varying NOT NULL,
+    staff_role character varying,
     action character varying NOT NULL,
     target_type character varying NOT NULL,
     target_id character varying NOT NULL,
     reason character varying(300),
     details jsonb,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    staff_role character varying
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -104,6 +106,40 @@ CREATE TABLE public.fraud_transaction_log (
 
 
 --
+-- Name: geo_databases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.geo_databases (
+    edition character varying(40) NOT NULL,
+    data bytea,
+    sha256 character(64),
+    downloaded_at timestamp with time zone,
+    last_attempt_at timestamp with time zone,
+    last_error character varying(200)
+);
+
+
+--
+-- Name: login_contexts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.login_contexts (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    id_user uuid NOT NULL,
+    session_id uuid,
+    outcome character varying(10) NOT NULL,
+    occurred_at timestamp with time zone NOT NULL,
+    ip_prefix character varying(50) NOT NULL,
+    ip_hash character(64) NOT NULL,
+    country character varying(2),
+    is_tor boolean,
+    geo_status character varying(15) NOT NULL,
+    rules_triggered jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: risk_scores; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -116,6 +152,14 @@ CREATE TABLE public.risk_scores (
     rules_triggered jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
+
+
+--
+-- Name: geo_databases PK_175a1a1a88f1bdc38036c358852; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.geo_databases
+    ADD CONSTRAINT "PK_175a1a1a88f1bdc38036c358852" PRIMARY KEY (edition);
 
 
 --
@@ -156,6 +200,14 @@ ALTER TABLE ONLY public.risk_scores
 
 ALTER TABLE ONLY public.flagged_transactions
     ADD CONSTRAINT "PK_c4682a847e361fb5210a563b147" PRIMARY KEY (id);
+
+
+--
+-- Name: login_contexts PK_c636e31b3670f2b2b933ff5eb1f; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.login_contexts
+    ADD CONSTRAINT "PK_c636e31b3670f2b2b933ff5eb1f" PRIMARY KEY (id);
 
 
 --
@@ -205,6 +257,20 @@ CREATE INDEX idx_fraud_tx_log_account_time ON public.fraud_transaction_log USING
 --
 
 CREATE UNIQUE INDEX idx_fraud_tx_log_unique ON public.fraud_transaction_log USING btree (transaction_id, account_id);
+
+
+--
+-- Name: idx_login_contexts_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_login_contexts_time ON public.login_contexts USING btree (occurred_at);
+
+
+--
+-- Name: idx_login_contexts_user_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_login_contexts_user_time ON public.login_contexts USING btree (id_user, occurred_at);
 
 
 --

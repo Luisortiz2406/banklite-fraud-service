@@ -1,16 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AdminAudit } from './common/staff/admin-audit.entity';
-import { FraudOutbox } from './events/fraud-outbox.entity';
-import { FlaggedTransaction } from './risk/entities/flagged-transaction.entity';
-import { FraudTransactionLog } from './risk/entities/fraud-transaction-log.entity';
-import { RiskScore } from './risk/entities/risk-score.entity';
+import { ENTITIES } from './entities';
 import { RiskModule } from './risk/risk.module';
 import { HealthController } from './health.controller';
 import { validateEnv } from './config/env.validation';
-import { GeoDatabase } from './geo/entities/geo-database.entity';
-import { LoginContext } from './geo/entities/login-context.entity';
 import { readGeoConfig } from './geo/geo-config';
 import { GeoModule } from './geo/geo.module';
 import { MetricsModule } from './metrics/metrics.module';
@@ -45,15 +39,7 @@ const validateCommon = validateEnv(
       useFactory: (config: ConfigService) => ({
         type: 'postgres' as const,
         url: config.get<string>('DATABASE_URL'),
-        entities: [
-          FraudTransactionLog,
-          RiskScore,
-          FlaggedTransaction,
-          FraudOutbox,
-          AdminAudit,
-          GeoDatabase,
-          LoginContext,
-        ],
+        entities: ENTITIES,
         synchronize: true,
         logging: false,
       }),
