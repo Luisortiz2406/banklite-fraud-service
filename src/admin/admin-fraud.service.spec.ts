@@ -1,7 +1,11 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Counter } from 'prom-client';
 import { Repository } from 'typeorm';
 import { AdminAuditService } from '../common/staff/admin-audit.service';
 import { StaffPrincipal } from '../common/staff/staff-auth.guard';
+import { FraudMetrics } from '../metrics/fraud-metrics';
+import { MetricsService } from '../metrics/metrics.service';
 import { FlaggedTransaction } from '../risk/entities/flagged-transaction.entity';
 import { RiskScore } from '../risk/entities/risk-score.entity';
 import { AdminFraudService } from './admin-fraud.service';
@@ -22,15 +26,25 @@ describe('AdminFraudService', () => {
   };
   const scores = { findOne: jest.fn() };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
+  const metricsService = new MetricsService(new ConfigService({}));
   const service = new AdminFraudService(
     flags as unknown as Repository<FlaggedTransaction>,
     scores as unknown as Repository<RiskScore>,
     audit as unknown as AdminAuditService,
+    new FraudMetrics(metricsService),
   );
+  const counter = () => metricsService.registry.getSingleMetric('fraud_alerts_total') as Counter;
+  const counted = async () => {
+    const { values } = await counter().get();
+    return Object.fromEntries(
+      values.filter((v) => v.value > 0).map((v) => [`${v.labels.level}:${v.labels.decision}`, v.value]),
+    );
+  };
   const pending = () => ({ id: ID, transactionId: 'tx-1', accountId: 'acc-1', score: 85, status: 'pending' });
 
   beforeEach(() => {
     jest.clearAllMocks();
+    counter().reset();
     flags.findOne.mockResolvedValue(pending());
   });
 
@@ -99,5 +113,37 @@ describe('AdminFraudService', () => {
 
     expect(flags.manager.transaction).not.toHaveBeenCalled();
     expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  describe('fraud_alerts_total al resolver', () => {
+    it('confirmar cuenta confirmed y descartar cuenta dismissed, con el nivel que sale del puntaje', async () => {
+      await service.resolve(ID, 'confirmed', 'Cliente confirmó el fraude', staff); // 85 → high
+      flags.findOne.mockResolvedValueOnce({ ...pending(), score: 62 });
+      await service.resolve(ID, 'dismissed', 'Falsa alarma', staff); // 62 → medium
+
+      expect(await counted()).toEqual({ 'high:confirmed': 1, 'medium:dismissed': 1 });
+    });
+
+    it('una alerta ya resuelta, una inexistente o una auditoría que falla (se revierte todo) no cuentan', async () => {
+      flags.findOne.mockResolvedValueOnce({ ...pending(), status: 'confirmed' });
+      await expect(service.resolve(ID, 'dismissed', 'tarde', staff)).rejects.toBeInstanceOf(BadRequestException);
+      flags.findOne.mockResolvedValueOnce(null);
+      await expect(service.resolve(ID, 'dismissed', 'nota', staff)).rejects.toBeInstanceOf(NotFoundException);
+      audit.record.mockRejectedValueOnce(new Error('auditoría caída'));
+      await expect(service.resolve(ID, 'confirmed', 'nota', staff)).rejects.toThrow('auditoría caída');
+
+      expect(await counted()).toEqual({});
+    });
+
+    it('si contar lanza, la alerta igual queda resuelta y el personal recibe la alerta resuelta', async () => {
+      jest.spyOn(counter(), 'inc').mockImplementation(() => {
+        throw new Error('prom-client roto');
+      });
+
+      const resolved = await service.resolve(ID, 'confirmed', 'nota', staff);
+
+      expect(resolved.status).toBe('confirmed');
+      expect(manager.save).toHaveBeenCalledWith(resolved);
+    });
   });
 });

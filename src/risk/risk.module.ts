@@ -7,6 +7,7 @@ import { AdminFraudService } from '../admin/admin-fraud.service';
 import { AdminAudit } from '../common/staff/admin-audit.entity';
 import { AdminAuditService } from '../common/staff/admin-audit.service';
 import { InternalKeyGuard } from '../common/guards/internal-key.guard';
+import { MetricsModule } from '../metrics/metrics.module';
 import { StaffAuthGuard } from '../common/staff/staff-auth.guard';
 import { EventConsumerService } from '../events/event-consumer.service';
 import { EventPublisherService } from '../events/event-publisher.service';
@@ -21,6 +22,7 @@ import { InternalRiskController } from './internal-risk.controller';
 @Module({
   imports: [
     ConfigModule,
+    MetricsModule,
     JwtModule.register({}),
     TypeOrmModule.forFeature([FraudTransactionLog, RiskScore, FlaggedTransaction, FraudOutbox, AdminAudit]),
   ],

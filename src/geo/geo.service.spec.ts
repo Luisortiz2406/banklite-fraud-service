@@ -10,6 +10,8 @@ import { EventPublisherService } from '../events/event-publisher.service';
 import { FlaggedTransaction } from '../risk/entities/flagged-transaction.entity';
 import { FraudTransactionLog } from '../risk/entities/fraud-transaction-log.entity';
 import { RiskScore } from '../risk/entities/risk-score.entity';
+import { FraudMetrics } from '../metrics/fraud-metrics';
+import { MetricsService } from '../metrics/metrics.service';
 import { RiskScoringService } from '../risk/risk-scoring.service';
 import { createTestDatabase, describeWithDb, truncateAll } from '../testing/test-database';
 import { GeoDatabase } from './entities/geo-database.entity';
@@ -262,6 +264,7 @@ describeWithDb('Geolocalización por IP (PostgreSQL)', () => {
           new ConfigService({}),
           new OutboxService(dataSource, publisher),
           logins,
+          new FraudMetrics(new MetricsService(new ConfigService({}))),
         );
       });
 
