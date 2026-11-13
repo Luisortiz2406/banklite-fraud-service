@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, MoreThanOrEqual } from 'typeorm';
 import { OutboxService } from '../events/outbox.service';
+import { FraudMetrics } from '../metrics/fraud-metrics';
 import { LoginContextsService } from '../geo/login-contexts.service';
 import { FlaggedTransaction } from './entities/flagged-transaction.entity';
 import { FraudTransactionLog } from './entities/fraud-transaction-log.entity';
@@ -35,6 +36,7 @@ export class RiskScoringService {
     private readonly config: ConfigService,
     private readonly outbox: OutboxService,
     private readonly logins: LoginContextsService,
+    private readonly metrics: FraudMetrics,
   ) {}
 
   private thresholds(): RiskThresholds {
@@ -66,7 +68,9 @@ export class RiskScoringService {
     const occurredAt = new Date(payload.createdAt);
     const amount = Number(payload.amount);
 
-    await this.dataSource.transaction(async (manager) => {
+    // La transacción devuelve el puntaje si generó una alerta (null si no): se cuenta DESPUÉS del commit,
+    // así una transacción que se revierte no deja una alerta contada que no existe.
+    const raisedScore = await this.dataSource.transaction(async (manager): Promise<number | null> => {
       const logRepo = manager.getRepository(FraudTransactionLog);
 
       const existing = await logRepo.findOne({ where: { transactionId: payload.transactionId, accountId } });
@@ -74,7 +78,7 @@ export class RiskScoringService {
         this.logger.debug(
           `transactionId=${payload.transactionId} accountId=${accountId} ya procesado, se ignora la reentrega.`,
         );
-        return;
+        return null;
       }
 
       // Historial de la cuenta en las últimas 24h, ANTES de insertar la actual.
@@ -122,7 +126,7 @@ export class RiskScoringService {
         }),
       );
 
-      if (score < this.reviewThreshold()) return;
+      if (score < this.reviewThreshold()) return null;
 
       const reason = rulesTriggered.map((r) => r.detail).join(' ');
       const flagRepo = manager.getRepository(FlaggedTransaction);
@@ -142,6 +146,15 @@ export class RiskScoringService {
       ]);
 
       this.logger.warn(`Transacción ${payload.transactionId} marcada para revisión (score=${score}): ${reason}`);
+      return score;
     });
+
+    if (raisedScore !== null) {
+      try {
+        this.metrics.raised(raisedScore);
+      } catch {
+        // Contar nunca rompe la evaluación: la alerta ya quedó guardada.
+      }
+    }
   }
 }

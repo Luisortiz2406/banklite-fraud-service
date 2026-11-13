@@ -7,6 +7,7 @@ import { HealthController } from './health.controller';
 import { validateEnv } from './config/env.validation';
 import { readGeoConfig } from './geo/geo-config';
 import { GeoModule } from './geo/geo.module';
+import { MetricsModule } from './metrics/metrics.module';
 
 const validateCommon = validateEnv(
   [
@@ -21,6 +22,7 @@ const validateCommon = validateEnv(
 
 @Module({
   imports: [
+    MetricsModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',

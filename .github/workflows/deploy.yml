@@ -28,4 +28,6 @@ jobs:
       postgres: true
       # Prueba extra: esquema SQL igual a las entidades.
       prueba-extra: npm run verificar:esquema
+      umbral-lineas: 70
+      umbral-ramas: 50
     secrets: inherit

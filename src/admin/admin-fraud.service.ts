@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AdminAuditService } from '../common/staff/admin-audit.service';
+import { FraudMetrics } from '../metrics/fraud-metrics';
 import { StaffPrincipal } from '../common/staff/staff-auth.guard';
 import { FlaggedStatus, FlaggedTransaction } from '../risk/entities/flagged-transaction.entity';
 import { RiskScore } from '../risk/entities/risk-score.entity';
@@ -15,6 +16,7 @@ export class AdminFraudService {
     @InjectRepository(FlaggedTransaction) private readonly flags: Repository<FlaggedTransaction>,
     @InjectRepository(RiskScore) private readonly scores: Repository<RiskScore>,
     private readonly audit: AdminAuditService,
+    private readonly metrics: FraudMetrics,
   ) {}
 
   async list(status?: string, accountId?: string, page = 1, limit = 25) {
@@ -61,6 +63,12 @@ export class AdminFraudService {
         manager,
       );
     });
+    // Ya guardada la resolución: se cuenta (el nivel sale del puntaje; contar nunca rompe la resolución).
+    try {
+      this.metrics.resolved(flag.score, status);
+    } catch {
+      // ignorar: la métrica no es parte de la resolución
+    }
     return flag;
   }
 

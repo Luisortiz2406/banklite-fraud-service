@@ -158,6 +158,7 @@ todas se configuran como variables del servicio, nunca en el código.
 |---|---|---|---|
 | `NODE_ENV` | No | `development` | `development` en local; `production` en Railway (lo fija el Dockerfile). |
 | `PORT` | No | `3009` | Puerto HTTP del servicio. |
+| `METRICS_PORT` | No | `9100` | Puerto de `GET /metrics` (Prometheus), solo para la red privada; **no** es el puerto público (`PORT`). `off` lo apaga. |
 | `DATABASE_URL` | **Sí** (no arranca sin ella) | `postgres://fraud_svc:<DB_PASSWORD_FRAUD>@localhost:5432/fraud_db` | Conexión a PostgreSQL de **su** base (rol propio, sin acceso a las demás). |
 | `STAFF_JWT_SECRET` | **Sí** (no arranca sin ella) | — | Firma de los JWT de empleados del panel (el mismo que en auth-service; distinto de JWT_SECRET). |
 | `RABBITMQ_URL` | No | `amqp://banklite:banklite@localhost:5672` | Conexión a RabbitMQ. Sin ella los eventos quedan en el outbox (o no se consumen). |
@@ -181,6 +182,24 @@ todas se configuran como variables del servicio, nunca en el código.
 | `FRAUD_GEO_SESSION_HOURS` | No | `12` | Horas después de un inicio de sesión en que sus reglas cuentan para las transacciones. |
 | `FRAUD_GEO_RETENTION_DAYS` | No | `90` | Historial para «país nuevo» y retención de los inicios de sesión (purga diaria). |
 
+## Métricas de negocio (`fraud_alerts_total`)
+
+Además de las métricas HTTP y de Node (puerto `METRICS_PORT`, solo red privada), el servicio publica
+`fraud_alerts_total{level,decision}`: alertas de fraude por nivel de riesgo y decisión. Ambas etiquetas son de
+lista cerrada (nunca ids de usuario, de cuenta ni de transacción, montos, puntajes, motivos ni nombres del personal).
+
+| Etiqueta | Valores |
+|---|---|
+| `level` | `medium` (puntaje desde el umbral de revisión, 60 por defecto, hasta 79) y `high` (80 o más). |
+| `decision` | `review` (el motor de reglas generó la alerta y queda para revisión manual; fraud-service nunca bloquea ni reversa), `confirmed` y `dismissed` (lo que decide después soporte o cumplimiento). |
+
+- **Alertas generadas** = `decision="review"`: se cuenta en `RiskScoringService.handleTransactionCompleted`, **después
+  del commit** de la transacción de la base (una transacción que se revierte no deja una alerta contada, y una reentrega
+  de un `transaction.completed` ya procesado no cuenta otra).
+- **Alertas resueltas** = `confirmed` / `dismissed`: se cuenta en `AdminFraudService.resolve`, después de guardar la
+  resolución y su auditoría, con el nivel que sale del puntaje de la alerta.
+- Contar nunca rompe nada: si `prom-client` falla, solo queda un aviso en el log.
+
 ## Pruebas
 
 ```bash
@@ -193,6 +212,10 @@ npm test   # con TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/p
 - Permisos del endpoint interno (solo `auth`) y del panel (solo `compliance` y `admin`).
 
 `test/fixtures/GeoIP2-Country-Test.mmdb` es la base de prueba de MaxMind ([MaxMind-DB](https://github.com/maxmind/MaxMind-DB), licencia MIT/Apache-2.0); no tiene datos reales.
+
+Reglas de puntaje (`risk-rules.spec.ts`): monto alto, velocidad, volumen del día y fraccionamiento, cada una con su borde; suman de forma independiente y el total nunca pasa de 100. Consumidor de `transaction.completed` (movimiento por emisor y receptor, mensajes inválidos a la DLQ, fallos a reintento), resolución de alertas auditada, outbox de `fraud.alert`, guards, `/health` y validación de configuración.
+
+**Cobertura:** el pipeline la muestra en el resumen de cada corrida y exige un mínimo de 70 % de líneas y 50 % de ramas (`umbral-lineas` y `umbral-ramas` en `deploy.yml`). Hoy está en 89,1 % de líneas y 82,6 % de ramas.
 
 ## Despliegue
 
